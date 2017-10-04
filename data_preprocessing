@@ -1,0 +1,372 @@
+---
+title: "Predictive Modeling"
+author: "Ibrahim Odumas Odufowora"
+date: '`r Sys.Date()`'
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    css: min.css
+    highlight: textmate
+    theme: null
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(prompt = FALSE)
+knitr::opts_chunk$set(error = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+knitr::opts_chunk$set(fig.width = 8)
+knitr::opts_chunk$set(fig.height = 6)
+knitr::opts_knit$set(root.dir = 'C:/Users/2PAC/Documents/R/Predictive_Modeling/HW1')
+```
+
+```{r packages, echo=FALSE, results='hide'}
+list.packages = c("ggplot2", "mlbench", "lattice", "car", "knitr", "caret", "e1071", "DT", "gplots", "ROCR", "klaR", "corrplot", "AppliedPredictiveModeling", "data.table")
+list.packages = unique(list.packages)
+install.pack = list.packages %in% installed.packages()
+if(length(list.packages[!install.pack]) > 0) 
+  install.p = install.packages(list.packages[!install.pack])
+library = lapply(list.packages, require, character.only=TRUE)
+```
+
+```{r myFunctions, echo=FALSE, results='hide'}
+#for multiple density plot #the data should be melt.
+my_densityplot = function(meltData)
+{
+  densityplot(~value|variable, data = meltData, scales = list(x = list(relation = "free"), y = list(relation = "free")), adjust = 1.25, pch = "|", xlab = "Predictor")
+}
+
+#for multiple histogram #the data should be melt
+
+my_multipleHistogram = function(meltData, bins)
+{
+  ggplot(data = melt(meltData), mapping = aes(x = value)) + geom_histogram(bins = bins) + facet_wrap(~variable, scales = 'free_x')
+}
+
+panel.cor <- function(x, y, digits = 2, cex.cor, ...)
+{
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  # correlation coefficient
+  r <- cor(x, y)
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste("r= ", txt, sep = "")
+  text(0.5, 0.6, txt)
+
+  # p-value calculation
+  p <- cor.test(x, y)$p.value
+  txt2 <- format(c(p, 0.123456789), digits = digits)[1]
+  txt2 <- paste("p= ", txt2, sep = "")
+  if(p<0.01) txt2 <- paste("p= ", "<0.01", sep = "")
+  text(0.5, 0.4, txt2)
+}
+```
+
+#Question 1: Glass Identification
+##Previewing the Glass Dataset:
+```{r}
+library(mlbench) 
+data(Glass) 
+#str(Glass)
+kable(head(Glass, n = 5), caption = "Head of Glass Data")
+cat("\nThe dimension of the Glass indentification dataset is [", dim(Glass), "]\n\nBelow is the structure of the Glass identilfication dataset")
+glass.Numeric = as.data.frame(lapply(Glass, as.numeric))
+str(Glass)
+```
+
+##Q1a: Using visualizations to explore the predictor variables:
+```{r}
+library(reshape2)
+glassmelt = melt(Glass)
+kable(head(glassmelt, n = 4), caption = "Head of Melted Glass Data")
+cat("\nDensity Plot of all the feature variables")
+my_densityplot(glassmelt)
+cat("\nHistogram Plot of all the feature variables")
+my_multipleHistogram(glassmelt, bins = 15)
+cat("The histogram Plots were plot in order to have a clearer perception of the data")
+cat("\nBox Plot of all the feature variables per type")
+ggplot(data = glassmelt, aes(x=variable, y=value)) + geom_boxplot(aes(fill=Type)) + facet_wrap( ~ variable, scales="free")
+pairs(Glass[,1:9])
+#kable(head(cor(Glass[,1:9]), n = 9), caption = "Correlation Matrix")
+pairs(Glass[,1:9], upper.panel = panel.cor)
+```
+
+(i) The following predictors: Ca, Si, Na, & Ri show some signs of a largely tailed distribution
+
+(ii) K and Mg have multiple peaks; this might means a mixture of different distributions.
+
+(iii) Very few predictors seem to be correlated: an obvious instance is Ri & Ca. However, must of the predictor
+
+<br >
+
+##Q1b: Do there appear to be any outliers in the data? Are any predictors skewed?
+```{r}
+skewValues = apply(Glass[,1:9], 2, skewness)
+skewValues = as.data.frame(skewValues)
+skewLevel = c("Heavily Skewed", "Symmetric", "Heavily Skewed", "Moderately Skewed", "Moderately Skewed", "Heavily Skewed", "Heavily Skewed", "Heavily Skewed", "Heavily Skewed")
+skewValues[, 2] = skewLevel
+colnames(skewValues) = c('skewValue', 'skewLevel')
+kable(skewValues, caption = "Skewness Level")
+#head(skewValues) 
+```
+
+(i) Looking at the shape of the box plot, there seem to be posiblity of outliers in the data set; it is unclear whether the extreme point in predicator K is an outlier.
+
+(ii) The table above shows the skewness level of each of predictors.
+
+<br >
+
+##Q1c: Are there any relevant transformations of one or more predictors that might improve the classification model?
+
+Having visually explored the data, it might be helpful to use some transformation techniques in order to deal with the skewness and outliers in the data set. 
+The following transformation could be useful: 
+
+(i) Spatial sign transformation to resolve/constraint the outliers/extreme values in the predictors.
+
+(ii) Yeo-Johnson transformations for treating the skewness, because they can deal with zero or negative values.
+
+(iii) However, Log transformation and Box-Cox transformations cannot be used in this case because must of the predictors contain zero values.
+
+
+```{r spatial_sign}
+transf_scale_centre = preProcess(Glass[, 1:9], c('center', 'scale'))
+data_scale_centre = predict(transf_scale_centre, Glass[, 1:9])
+sSign_scale_centre = spatialSign(data_scale_centre)
+cat("\nCorrelation Plot of the transformed data: Center & Scale Transformation")
+pairs(sSign_scale_centre)
+pairs(sSign_scale_centre, upper.panel = panel.cor)
+```
+
+Spatial Sign transformation has helped to constrain the outliers. Also it has changed the direction of some zero values in the data e.g Fe and B. Thus, correlation between the predictors seem to have improved.
+
+<br >
+
+
+```{r Yeo_Johnson_transformations}
+transf_yeo = preProcess(Glass[, 1:9], 'YeoJohnson')
+data_yeo = predict(transf_yeo, Glass[, 1:9])
+melt_yeo = melt(data_yeo)
+cat("\nDensity Plot of the transformed data: Yeo Johnson Transformation")
+my_densityplot(melt_yeo)
+```
+
+Apparently, this seems not to have improved the skewness in the data. 
+
+<br >
+
+#Question 2: Soybean Data
+##Previewing the Soybean Dataset:
+```{r}
+library(mlbench)
+library(lattice)
+data(Soybean) 
+#kable(head(Soybean, n = 5), caption = "Head of Soybean Data")
+
+cat("\nThe dimension of the Soybean dataset is [", dim(Soybean), "]\n\nBelow is the structure of the Soybean dataset")
+soybean.Numeric = as.data.frame(lapply(Soybean, as.numeric))
+head(str(Soybean))
+```
+
+<br >
+
+##Q2a: Investigate the frequency distributions for the categorical predictors:
+
+```{r missing_value}
+cat("\n")
+cat("Temp")
+sy = Soybean
+sy_tb = table(Soybean$temp, useNA = 'always')
+sy_tb
+levels = c("low", "norm", "high", "missing")
+sy$temp = recode(sy$temp,  "0 = 'low'; 1 = 'norm'; 2 = 'high'; NA = 'missing'", levels = levels)
+#kable(as.data.frame(sy_tb), caption = "Distribution of Temp")
+sy_tb = table(sy$temp)
+sy_tb
+
+cat("Date")
+table(sy$date, useNA = "always")
+levels.date = c("apr", "may", "june", "july", "aug", "sept", "missing")
+sy$date <- recode(sy$date, "0 ='apr';1='may';2='june';3='july';4='aug';5='sept';6='oct';NA = 'missing'", levels = levels.date)
+table(sy$date)
+
+cat("Precip")
+table(sy$precip, useNA = "always")
+sy$precip <- recode(sy$precip, "0 = 'low'; 1 = 'norm'; 2 = 'high'; NA = 'missing'", levels = levels)
+table(sy$precip)
+```
+
+Looking at the output above, it is obvious that the factors levels of some predicators are not informative. Predictor temp consist of integer values, which stands for below average, average and above average. Thus, it would be more informative to change these type of integer values to their real values.
+
+```{r}
+library(vcd)
+cat("Barchart of the distribution of date and temp")
+barchart(table(sy$date, sy$temp), auto.key = list(columns = 4, title = "temp"))
+```
+
+<br >
+
+##Q2b: Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?:
+
+```{r}
+missing = unlist(lapply(Soybean, function(x) any(is.na(x))))
+missing = names(missing)[missing]
+cat("These are the predictors with missing values")
+missing
+```
+
+<br >
+
+```{r}
+predClass = apply(Soybean[, missing], 2, function(x, y) {tab <- table(is.na(x), y)
+tab[2,]/apply(tab, 2, sum)}, y = Soybean$Class)
+predClass = predClass[apply(predClass, 1, sum) > 0,]
+predClass = predClass[, apply(predClass, 2, sum) > 0]
+predClass = t(as.data.frame(predClass))
+data.table(predClass)
+```
+
+(i) Class Phytophthora-rot possess high rate of missing data.
+
+(ii) Class diaporthe-pod-&-stem-blight possess a fair missing data.
+
+(iii) The information above shows that many predictors are missing for herbicide-injury, cyst-nematode and 2-4-d-injury classes. 
+
+
+
+cyst-nematode and herbicide-injury classes. The  and the diaporthe-pod-&-stem-blight has a more moderate
+pattern of missing data.
+
+<br >
+
+##Q2c: Develop a strategy for handling missing data, either by eliminating predictors or imputation:
+
+To hand the missing data, let convert the factors to a set of dummy variables:
+
+```{r}
+ordVar = unlist(lapply(Soybean, is.ordered))
+ordVar = names(ordVar)[ordVar]
+allClass = as.character(unique(Soybean$Class[complete.cases(Soybean)]))
+sy1 <- subset(Soybean, Class %in% allClass)
+
+for(i in ordVar) sy1[, i] <- factor(as.character(sy1[, i]))
+
+dummyVar = dummyVars(Class ~ ., data = sy1)
+dummies = predict(dummyVar, sy1)
+
+predDist = nearZeroVar(dummies, saveMetrics = TRUE)
+head(predDist)
+
+cat("The number of predictors to remove:")
+sum(predDist$nzv)
+cat("The percentage of predictors to remove:")
+mean(predDist$nzv)
+```
+
+Hence, eliminating about 16% of the dummy variable would help to remove unbalanced and sparse predictors.
+
+<br >
+
+#Question 3: Blood Brain
+
+##Question 3a:
+```{r}
+library(caret)
+data(BloodBrain)
+#?BloodBrain
+cat("Number of columns:")
+ncol(bbbDescr)
+cat("")
+predInfo = nearZeroVar(bbbDescr, saveMetrics = TRUE)
+head(predInfo)
+```
+
+<br >
+
+##Question 3b:
+
+These are some of the predictors with degenerate distributions:
+
+```{r}
+cat("These are the near-zero variance predictors")
+rownames(predInfo)[predInfo$nzv]
+cat("These are table for some of them:")
+cat("alert")
+table(bbbDescr$alert)
+cat("a_acid")
+table(bbbDescr$a_acid)
+```
+
+We might want to remove them:
+```{r}
+remove <- bbbDescr[, !predInfo$nzv]
+ncol(remove)
+```
+
+```{r}
+skewValues = apply(bbbDescr, 2, skewness)
+skewValues = as.data.frame(skewValues)
+kable(head(skewValues), caption = "Head of Skewness Level")
+#head(skewValues) 
+```
+
+Some of the predictors show some level of skewness e.g negative., while some are also symmetric e.g nbasic, vsa_hyd, weight etc.
+
+<br >
+
+##Question 3c:
+Looking at the correlation between the predictors
+
+<br >
+
+```{r}
+set.seed(93432)
+sampled1 <- remove[, sample(1:ncol(remove), 8)]
+yeo_t <- preProcess(remove, method = "YeoJohnson")
+transformed <- predict(yeo_t, newdata = remove)
+sampled2 <- transformed[, names(sampled1)]
+
+rawCorr <- cor(remove)
+transCorr <- cor(transformed)
+
+ssData <- spatialSign(scale(remove))
+ssCorr <- cor(ssData)
+## plot the matrix with no labels or grid
+cat("\nCorrelation Matrices for the raw data")
+corrplot(rawCorr, order = "hclust", addgrid.col = NA, tl.pos = "n")
+
+ssData <- spatialSign(scale(remove))
+ssCorr <- cor(ssData)
+cat("\nCorrelation Matrices for the Spatial Sign Transformation")
+corrplot(ssCorr, order = "hclust", addgrid.col = NA, tl.pos = "n")
+```
+
+```{r}
+corrInfo <- function(x) summary(x[upper.tri(x)])
+cat("\nCorrelation Matrices for the raw data")
+corrInfo(rawCorr)
+cat("\nCorrelation Matrices for the Spatial Sign Transformation")
+corrInfo(ssCorr)
+```
+
+The plots above showed:
+
+(i) there are strong relationships between the predictor as seen in the correlation matrix before transformation
+
+(ii) this strong relationships can be minimized via transformation
+
+(iii) that there is a reduction in the level of correlation after transformation.
+
+(iv) however, it seems that the better idea is to reduce predictors, this can be done through findCorrelation function in caret package. The level of correlation would have to be set.
+
+(v) this, should not have a dramatic effect on the number of predictors available for maodeling.
+
+
+Below is the length and values of the high correlation predictors with a cutoff of 0.85
+```{r}
+highCorr <- findCorrelation(rawCorr, cutoff = .80)
+length(highCorr)
+highCorr
+```
